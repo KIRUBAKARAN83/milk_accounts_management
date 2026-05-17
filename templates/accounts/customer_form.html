@@ -1,0 +1,276 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ title }}</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <style>
+    :root{
+      --bg:#f4f6f9;
+      --card:#ffffff;
+      --muted:#7b8a99;
+      --accent-1:#1e3c72;
+      --accent-2:#2a5298;
+      --success:#2ecc71;
+      --danger:#e63946;
+      --soft-shadow: 0 12px 36px rgba(16,24,40,0.06);
+      --radius:12px;
+    }
+
+    html,body{height:100%}
+    body{
+      margin:0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background:var(--bg);
+      color:#24303a;
+      -webkit-font-smoothing:antialiased;
+      -moz-osx-font-smoothing:grayscale;
+    }
+
+    /* Container */
+    .form-wrap {
+      max-width:720px;
+      margin:48px auto;
+      padding:28px;
+      background: linear-gradient(180deg,var(--card), #fbfdff);
+      border-radius: var(--radius);
+      box-shadow: var(--soft-shadow);
+      border: 1px solid rgba(16,24,40,0.03);
+      position:relative;
+      overflow:hidden;
+      animation: popIn 600ms cubic-bezier(.2,.9,.2,1);
+    }
+
+    /* Header */
+    .form-header {
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      margin-bottom:18px;
+    }
+    .form-header h3{
+      margin:0;
+      font-weight:800;
+      color:var(--accent-1);
+      letter-spacing:0.2px;
+      font-size:20px;
+    }
+    .form-sub {
+      color:var(--muted);
+      font-size:13px;
+      font-weight:600;
+    }
+
+    /* Floating labels & inputs (visual only) */
+    .form-floating-custom {
+      position:relative;
+      margin-bottom:18px;
+    }
+    .form-floating-custom .form-control {
+      width:100%;
+      padding:14px;
+      border-radius:10px;
+      border:1px solid #e6e9ee;
+      background:transparent;
+      transition: box-shadow .22s ease, border-color .22s ease, transform .22s ease;
+      font-size:15px;
+      color:var(--text, #24303a);
+      outline:none;
+      box-shadow: inset 0 -6px 12px rgba(0,0,0,0.02);
+    }
+    .form-floating-custom label {
+      position:absolute;
+      left:14px;
+      top:12px;
+      font-size:13px;
+      color:var(--muted);
+      pointer-events:none;
+      transition: transform .18s ease, font-size .18s ease, top .18s ease, color .18s ease;
+      background:transparent;
+      padding:0 6px;
+    }
+    .form-floating-custom .form-control:focus + label,
+    .form-floating-custom .form-control:not([placeholder=""]) + label {
+      transform: translateY(-10px) scale(.95);
+      top:6px;
+      font-size:12px;
+      color:var(--accent-2);
+      background:transparent;
+    }
+
+    .form-floating-custom .form-control:focus {
+      border-color: var(--accent-2);
+      box-shadow: 0 8px 26px rgba(42,82,152,0.08);
+      transform: translateY(-2px);
+    }
+
+    /* Error styling */
+    .field-error { color: var(--danger); font-size:13px; margin-top:6px; font-weight:600; }
+
+    /* Buttons */
+    .form-actions {
+      display:flex;
+      gap:12px;
+      margin-top:8px;
+      align-items:center;
+    }
+    .btn-primary-custom {
+      background: linear-gradient(90deg,var(--accent-2),var(--accent-1));
+      border: none;
+      color: #fff;
+      padding:10px 16px;
+      border-radius:10px;
+      font-weight:800;
+      box-shadow: 0 12px 36px rgba(30,60,114,0.12);
+      transition: transform .22s ease, box-shadow .22s ease;
+    }
+    .btn-primary-custom:hover { transform: translateY(-4px); box-shadow: 0 22px 48px rgba(30,60,114,0.14); }
+
+    .btn-ghost {
+      background: transparent;
+      border: 1px solid #e6e9ee;
+      color: #24303a;
+      padding:10px 14px;
+      border-radius:10px;
+      font-weight:700;
+      transition: transform .18s ease, background .18s ease;
+    }
+    .btn-ghost:hover { transform: translateY(-3px); background: rgba(16,24,40,0.02); }
+
+    /* Non-field errors */
+    .non-field {
+      margin-bottom:12px;
+      padding:12px 14px;
+      border-radius:10px;
+      background: linear-gradient(90deg,#fff6f6,#fff);
+      border:1px solid rgba(230,57,70,0.06);
+      color:var(--danger);
+      font-weight:700;
+    }
+
+    /* Small helper text */
+    .hint { font-size:13px; color:var(--muted); margin-top:6px; }
+
+    /* Decorative corner */
+    .corner-deco {
+      position:absolute;
+      right:-120px;
+      top:-80px;
+      width:320px;
+      height:320px;
+      background: radial-gradient(circle at 20% 20%, rgba(42,82,152,0.06), transparent 20%), linear-gradient(135deg, rgba(30,60,114,0.04), transparent 40%);
+      transform: rotate(12deg);
+      pointer-events:none;
+    }
+
+    /* Responsive */
+    @media (max-width:720px){
+      .form-wrap { margin:20px 16px; padding:18px; }
+      .form-header { flex-direction:column; align-items:flex-start; gap:8px; }
+    }
+
+    /* Animations */
+    @keyframes popIn {
+      0% { opacity:0; transform: translateY(8px) scale(.995); }
+      60% { opacity:1; transform: translateY(-6px) scale(1.01); }
+      100% { transform: translateY(0) scale(1); }
+    }
+  </style>
+</head>
+<body>
+  <div class="form-wrap" role="main" aria-labelledby="formTitle">
+    <div class="corner-deco" aria-hidden="true"></div>
+
+    <div class="form-header">
+      <div>
+        <h3 id="formTitle">{{ title|default:"Edit Customer" }}</h3>
+        <div class="form-sub">Update customer details</div>
+      </div>
+
+      <div class="form-sub d-none d-sm-flex" aria-hidden="true">Quick keys: Ctrl+E → Add Entry, Ctrl+C → Customers</div>
+    </div>
+
+    <form method="post" novalidate>
+      {% csrf_token %}
+
+      {% if form.non_field_errors %}
+        <div class="non-field" role="alert">
+          {% for e in form.non_field_errors %}{{ e }}{% endfor %}
+        </div>
+      {% endif %}
+
+      {# Render fields safely. We avoid calling field.as_widget with kwargs or accessing widget internals in the template. #}
+      {% for field in form %}
+        <div class="form-floating-custom">
+          {# Label above the field for accessibility; field will be rendered normally. #}
+          {{ field.label_tag }}
+          {{ field }}
+          {% if field.errors %}
+            <div class="field-error" role="alert">
+              {% for e in field.errors %}{{ e }}{% endfor %}
+            </div>
+          {% endif %}
+        </div>
+      {% endfor %}
+
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary-custom">💾 Save</button>
+        <a href="{% url 'accounts:customer_list' %}" class="btn btn-ghost">❌ Cancel</a>
+      </div>
+    </form>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    // Keyboard shortcuts (non-invasive, keeps backend links intact)
+    document.addEventListener('keydown', function(e) {
+      if (e.ctrlKey && !e.shiftKey && !e.altKey) {
+        const k = e.key.toLowerCase();
+        if (k === 'e') {
+          e.preventDefault();
+          window.location.href = "{% url 'accounts:add_entry' %}";
+        } else if (k === 'c') {
+          e.preventDefault();
+          window.location.href = "{% url 'accounts:customer_list' %}";
+        }
+      }
+    });
+
+    // Add placeholder and form-control class client-side to avoid template-side widget manipulation.
+    (function enhanceFields(){
+      // Add class and placeholder to inputs, selects, textareas rendered by Django forms
+      const wrap = document.querySelector('.form-wrap');
+      if (!wrap) return;
+      const fields = wrap.querySelectorAll('input, textarea, select');
+      fields.forEach(function(el){
+        // Skip hidden inputs (csrf, etc.)
+        if (el.type === 'hidden') return;
+        // Add bootstrap class if not present
+        if (!el.classList.contains('form-control')) el.classList.add('form-control');
+        // Ensure placeholder exists so floating label CSS can detect non-empty state
+        if (!el.getAttribute('placeholder')) el.setAttribute('placeholder', ' ');
+        // Associate label 'for' if missing (Django usually sets it)
+        // No changes to backend; this is purely DOM-level enhancement.
+      });
+
+      // Convert Django's label_tag (which may render <label for="id_field">) into our floating label placement:
+      // Move label after the input so CSS sibling selector works: input + label
+      document.querySelectorAll('.form-floating-custom').forEach(function(container){
+        const input = container.querySelector('input, textarea, select');
+        const label = container.querySelector('label');
+        if (input && label) {
+          // If label is before input, move it after input to match CSS (input + label)
+          if (label.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING) {
+            // label is before input; move it after
+            container.removeChild(label);
+            container.appendChild(label);
+          }
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

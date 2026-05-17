@@ -1,0 +1,320 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Customers</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <style>
+    :root{
+      --bg:#f4f6f9;
+      --card:#ffffff;
+      --muted:#7b8a99;
+      --accent-1:#1e3c72;
+      --accent-2:#2a5298;
+      --accent-3:#0d6efd;
+      --success:#2ecc71;
+      --danger:#e63946;
+      --glass: rgba(255,255,255,0.06);
+      --soft-shadow: 0 12px 36px rgba(16,24,40,0.06);
+      --radius:12px;
+    }
+
+    html,body{height:100%}
+    body{
+      margin:0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background:var(--bg);
+      color:#24303a;
+      -webkit-font-smoothing:antialiased;
+      -moz-osx-font-smoothing:grayscale;
+    }
+
+    .container {
+      max-width:1100px;
+    }
+
+    /* Header row */
+    .top-row {
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      margin-top:36px;
+      margin-bottom:18px;
+      animation: popIn 600ms ease;
+    }
+    .page-title {
+      font-weight:800;
+      color:var(--accent-1);
+      margin:0;
+      display:flex;
+      align-items:center;
+      gap:10px;
+      font-size:22px;
+    }
+
+    /* Action button */
+    .btn-primary-cta {
+      background: linear-gradient(90deg,var(--accent-2),var(--accent-1));
+      border: none;
+      color: #fff;
+      padding:10px 14px;
+      border-radius:10px;
+      font-weight:700;
+      box-shadow: 0 10px 30px rgba(30,60,114,0.12);
+      transition: transform .18s ease, box-shadow .18s ease;
+    }
+    .btn-primary-cta:hover { transform: translateY(-4px); box-shadow: 0 20px 48px rgba(30,60,114,0.14); }
+
+    /* Table card */
+    .table-card {
+      background: linear-gradient(180deg,var(--card), #fbfdff);
+      border-radius: var(--radius);
+      padding: 12px;
+      box-shadow: var(--soft-shadow);
+      border: 1px solid rgba(16,24,40,0.03);
+      overflow: hidden;
+      animation: fadeIn 700ms ease;
+    }
+
+    .table-responsive { margin-top:8px; }
+
+    table.table {
+      margin-bottom:0;
+      border-collapse: separate;
+      border-spacing: 0;
+      width:100%;
+    }
+
+    thead.table-dark th {
+      background: linear-gradient(90deg,#0f1724,#111827);
+      color:#fff;
+      font-weight:700;
+      padding:12px 16px;
+      border: none;
+      vertical-align:middle;
+    }
+
+    tbody td {
+      padding:12px 14px;
+      vertical-align:middle;
+      border-top:1px solid #f3f4f6;
+      color: #24303a;
+    }
+
+    tbody tr {
+      transition: transform .18s ease, background .18s ease, box-shadow .18s ease;
+    }
+    tbody tr:hover {
+      transform: translateY(-4px);
+      background: linear-gradient(90deg, rgba(34,47,62,0.02), rgba(34,47,62,0.01));
+      box-shadow: 0 8px 20px rgba(16,24,40,0.04);
+    }
+
+    .text-success { color: var(--success) !important; font-weight:700; }
+    .text-danger { color: var(--danger) !important; font-weight:700; }
+
+    /* Three-dot dropdown */
+    .dot-menu-btn {
+      background: none;
+      border: 1.5px solid #e2e8f0;
+      border-radius: 8px;
+      width: 34px;
+      height: 34px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 18px;
+      color: #64748b;
+      transition: background .15s ease, border-color .15s ease, color .15s ease;
+      line-height: 1;
+      padding: 0;
+    }
+    .dot-menu-btn:hover {
+      background: #f1f5f9;
+      border-color: #cbd5e1;
+      color: #1e3c72;
+    }
+
+    .dropdown-menu {
+      border-radius: 12px;
+      border: 1px solid #e8edf3;
+      box-shadow: 0 12px 36px rgba(16,24,40,0.13);
+      padding: 6px;
+      min-width: 160px;
+      animation: dropIn 160ms cubic-bezier(.2,.9,.2,1);
+    }
+
+    .dropdown-item {
+      border-radius: 8px;
+      padding: 9px 14px;
+      font-weight: 600;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #24303a;
+      transition: background .12s ease;
+    }
+    .dropdown-item:hover { background: #f4f6f9; color: #1e3c72; }
+    .dropdown-item.danger { color: #e63946; }
+    .dropdown-item.danger:hover { background: #fff1f2; color: #c0152a; }
+
+    .dropdown-divider { margin: 5px 0; border-color: #eef2f7; }
+
+    @keyframes dropIn {
+      from { opacity:0; transform: translateY(-6px) scale(.97); }
+      to   { opacity:1; transform: translateY(0) scale(1); }
+    }
+
+    /* Empty state */
+    .empty-state {
+      padding:18px;
+      border-radius:10px;
+      background: linear-gradient(90deg,#fff,#fbfdff);
+      box-shadow: 0 8px 20px rgba(16,24,40,0.03);
+      text-align:center;
+      color:var(--muted);
+      font-weight:600;
+    }
+
+    /* Footer link */
+    .back-btn {
+      margin-top:18px;
+      border-radius:10px;
+      padding:8px 12px;
+      font-weight:700;
+    }
+
+    /* Small screens */
+    @media (max-width: 768px) {
+      .top-row { flex-direction:column; align-items:flex-start; gap:10px; }
+      thead.table-dark th, tbody td { padding:10px 8px; font-size:14px; }
+      .action-btns .btn { padding:6px 6px; font-size:13px; }
+    }
+
+    /* Animations */
+    @keyframes popIn { from{ opacity:0; transform: translateY(8px);} to{ opacity:1; transform: translateY(0);} }
+    @keyframes fadeIn { from{ opacity:0; } to{ opacity:1; } }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="top-row">
+      <h2 class="page-title">Customers</h2>
+      <div style="display:flex;gap:10px;align-items:center;">
+        <a href="{% url 'accounts:add_entry' %}" class="btn btn-primary-cta" title="Add Entry (Ctrl+E)">➕ Add Entry</a>
+        <a href="{% url 'accounts:payment_history' %}" class="btn btn-dark" style="border-radius:10px;padding:10px 14px;font-weight:700;" title="All Payment History">💳 Payment History</a>
+      </div>
+    </div>
+
+    <div class="table-card">
+      <div class="table-responsive">
+        <table class="table table-hover table-bordered align-middle">
+          <thead class="table-dark">
+            <tr>
+              <th>Name</th>
+              <th class="text-end">Total Milk (L)</th>
+              <th class="text-end">Balance Amount (₹)</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for customer in customers %}
+            <tr>
+              <td>
+                <a href="{% url 'accounts:customer_detail' customer.id %}" style="font-weight:700;color:var(--accent-2);text-decoration:none;">
+                  {{ customer.name }}
+                </a>
+              </td>
+              <td class="text-end">{{ customer.total_litres }}</td>
+              <td class="text-end">
+                <span class="{% if customer.balance_amount > 0 %}text-success{% elif customer.balance_amount < 0 %}text-danger{% endif %}">
+                  ₹ {{ customer.balance_amount|floatformat:2 }}
+                </span>
+              </td>
+              <td class="action-btns">
+                <div class="dropdown">
+                  <button class="dot-menu-btn" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Actions">
+                    ⋮
+                  </button>
+                  <ul class="dropdown-menu dropdown-menu-end">
+                    <li>
+                      <a class="dropdown-item" href="{% url 'accounts:customer_detail' customer.id %}">
+                        📋 View
+                      </a>
+                    </li>
+                    <li>
+                      <a class="dropdown-item" href="{% url 'accounts:edit_customer' customer.id %}">
+                        ✏️ Edit
+                      </a>
+                    </li>
+                    <li>
+                      <a class="dropdown-item" href="{% url 'accounts:bill_pdf' customer.id %}">
+                        📄 Download PDF
+                      </a>
+                    </li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li>
+                      <form method="post" action="{% url 'accounts:delete_customer' customer.id %}" onsubmit="return confirmDelete(this, '{{ customer.name|escapejs }}');">
+                        {% csrf_token %}
+                        <button type="submit" class="dropdown-item danger">
+                          🗑️ Delete
+                        </button>
+                      </form>
+                    </li>
+                  </ul>
+                </div>
+              </td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="4">
+                <div class="empty-state">No customers found</div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <a href="{% url 'accounts:home' %}" class="btn btn-secondary back-btn">← Back to Dashboard</a>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    // Keyboard shortcuts (non-invasive)
+    document.addEventListener('keydown', function(e) {
+      if (e.ctrlKey && !e.shiftKey && !e.altKey) {
+        const k = e.key.toLowerCase();
+        if (k === 'h') {
+          e.preventDefault();
+          window.location.href = "{% url 'accounts:home' %}";
+        } else if (k === 'e') {
+          e.preventDefault();
+          window.location.href = "{% url 'accounts:add_entry' %}";
+        } else if (k === 'c') {
+          e.preventDefault();
+          window.location.href = "{% url 'accounts:customer_list' %}";
+        }
+      }
+    });
+
+    // Confirm delete with customer name (escaped server-side into template)
+    function confirmDelete(formEl, customerName) {
+      // customerName is escaped via escapejs in template to avoid XSS
+      return confirm('Delete ' + customerName + '? All records will be removed.');
+    }
+
+    // Small accessibility enhancement: focus first action on load if present
+    window.addEventListener('load', function() {
+      const firstView = document.querySelector('.action-btns a.btn-info');
+      if (firstView) firstView.setAttribute('aria-label', 'View first customer details');
+    });
+  </script>
+</body>
+</html>

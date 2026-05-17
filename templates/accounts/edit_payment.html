@@ -1,0 +1,152 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Edit Payment — {{ customer.name }}</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #f4f6f9;
+      --accent-1: #1e3c72;
+      --accent-2: #2a5298;
+      --card: #ffffff;
+    }
+    body {
+      background: var(--bg);
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 40px 16px;
+    }
+    .page-wrap { width: 100%; max-width: 540px; }
+
+    .page-header {
+      background: linear-gradient(135deg, #e65100, #f57c00);
+      color: #fff;
+      border-radius: 16px 16px 0 0;
+      padding: 24px 28px 20px;
+    }
+    .page-header h4 { margin: 0; font-weight: 800; font-size: 20px; }
+    .page-header small { opacity: 0.85; font-size: 13px; }
+
+    /* Original payment info strip */
+    .original-strip {
+      background: #fff3e0;
+      border: 1px solid #ffcc80;
+      padding: 12px 28px;
+      font-size: 13px;
+      color: #7a4000;
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+    .original-strip span { font-weight: 700; color: #e65100; }
+
+    .form-card {
+      background: var(--card);
+      border-radius: 0 0 16px 16px;
+      padding: 28px;
+      box-shadow: 0 12px 36px rgba(16,24,40,0.08);
+    }
+    .form-label { font-weight: 600; font-size: 14px; color: #374151; }
+
+    .btn-update {
+      background: linear-gradient(135deg, #e65100, #f57c00);
+      color: #fff;
+      font-weight: 700;
+      border: none;
+      padding: 12px 28px;
+      border-radius: 10px;
+      font-size: 15px;
+      transition: transform 0.22s, box-shadow 0.22s;
+      box-shadow: 0 6px 18px rgba(230,81,0,0.25);
+    }
+    .btn-update:hover { transform: translateY(-3px); color: #fff; box-shadow: 0 12px 28px rgba(230,81,0,0.3); }
+
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--accent-2);
+      text-decoration: none;
+      margin-bottom: 16px;
+      transition: gap 0.2s;
+    }
+    .back-link:hover { gap: 10px; color: var(--accent-1); }
+  </style>
+</head>
+<body>
+<div class="page-wrap">
+
+  <a href="{% url 'accounts:payment_history' %}" class="back-link">← Back to Payment History</a>
+
+  <!-- Header -->
+  <div class="page-header">
+    <h4>✏️ Edit Payment</h4>
+    <small>Customer: <strong>{{ customer.name }}</strong></small>
+  </div>
+
+  <!-- Original values strip -->
+  <div class="original-strip">
+    <div>Original Amount: <span>₹ {{ payment.amount|floatformat:2 }}</span></div>
+    <div>Original Date: <span>{{ payment.paid_on|date:"d M Y" }}</span></div>
+    {% if payment.note %}
+    <div>Original Note: <span>{{ payment.note }}</span></div>
+    {% endif %}
+  </div>
+
+  <!-- Form -->
+  <div class="form-card">
+    <form method="post">
+      {% csrf_token %}
+
+      {% if form.non_field_errors %}
+        <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+      {% endif %}
+
+      <!-- Amount -->
+      <div class="mb-3">
+        <label for="{{ form.amount.id_for_label }}" class="form-label">Payment Amount (₹)</label>
+        {{ form.amount }}
+        {% if form.amount.errors %}
+          <div class="text-danger mt-1" style="font-size:13px;">{{ form.amount.errors }}</div>
+        {% endif %}
+      </div>
+
+      <!-- Date -->
+      <div class="mb-3">
+        <label for="{{ form.paid_on.id_for_label }}" class="form-label">Payment Date</label>
+        {{ form.paid_on }}
+        {% if form.paid_on.errors %}
+          <div class="text-danger mt-1" style="font-size:13px;">{{ form.paid_on.errors }}</div>
+        {% endif %}
+      </div>
+
+      <!-- Note -->
+      <div class="mb-4">
+        <label for="{{ form.note.id_for_label }}" class="form-label">
+          Note <span style="font-weight:400;color:#9ca3af;">(optional)</span>
+        </label>
+        {{ form.note }}
+        {% if form.note.errors %}
+          <div class="text-danger mt-1" style="font-size:13px;">{{ form.note.errors }}</div>
+        {% endif %}
+      </div>
+
+      <div class="d-flex gap-3 align-items-center">
+        <button type="submit" class="btn-update">💾 Update Payment</button>
+        <a href="{% url 'accounts:payment_history' %}" class="btn btn-outline-secondary">Cancel</a>
+      </div>
+    </form>
+  </div>
+
+</div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

@@ -1,0 +1,273 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Add Payment — {{ customer.name }}</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #f4f6f9;
+      --accent-1: #1e3c72;
+      --accent-2: #2a5298;
+      --gold: #ffcc00;
+      --card: #ffffff;
+    }
+    body {
+      background: var(--bg);
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 40px 16px;
+    }
+    .page-wrap { width: 100%; max-width: 620px; }
+
+    /* ── Page header ── */
+    .page-header {
+      background: linear-gradient(135deg, var(--accent-1), var(--accent-2));
+      color: #fff;
+      border-radius: 16px 16px 0 0;
+      padding: 24px 28px 20px;
+    }
+    .page-header h4 { margin: 0; font-weight: 800; font-size: 20px; }
+    .page-header small { opacity: 0.85; font-size: 13px; }
+
+    /* ── Balance banner ── */
+    .balance-banner {
+      background: #fff8e1;
+      border: 1px solid #ffe082;
+      border-radius: 0;
+      padding: 14px 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .balance-banner .label  { font-size: 13px; color: #7a6000; font-weight: 600; }
+    .balance-banner .amount { font-size: 22px; font-weight: 800; color: #c0392b; }
+    .balance-banner .after  { font-size: 13px; color: #2e7d32; font-weight: 600; }
+
+    /* ── Breakdown strip ── */
+    .breakdown-strip {
+      background: #f0f4ff;
+      border: 1px solid #c7d4f5;
+      border-top: none;
+      padding: 10px 28px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      font-size: 13px;
+      color: #374151;
+    }
+    .breakdown-strip .chip {
+      background: #fff;
+      border: 1px solid #dbe4ff;
+      border-radius: 20px;
+      padding: 3px 12px;
+      font-weight: 600;
+      color: var(--accent-1);
+    }
+    .breakdown-strip .sep { color: #9ca3af; font-size: 16px; }
+
+    /* ── Form card ── */
+    .form-card {
+      background: var(--card);
+      border-radius: 0 0 16px 16px;
+      padding: 28px;
+      box-shadow: 0 12px 36px rgba(16,24,40,0.08);
+    }
+    .form-label { font-weight: 600; font-size: 14px; color: #374151; }
+
+    .btn-pay {
+      background: linear-gradient(135deg, var(--accent-1), var(--accent-2));
+      color: #fff;
+      font-weight: 700;
+      border: none;
+      padding: 12px 28px;
+      border-radius: 10px;
+      font-size: 15px;
+      transition: transform 0.22s, box-shadow 0.22s;
+      box-shadow: 0 6px 18px rgba(30,60,114,0.2);
+    }
+    .btn-pay:hover { transform: translateY(-3px); box-shadow: 0 12px 28px rgba(30,60,114,0.28); color: #fff; }
+    .btn-pay:active { transform: scale(0.97); }
+
+    /* ── Recent payments table ── */
+    .recent-section { margin-top: 32px; }
+    .recent-section h6 {
+      font-weight: 700;
+      font-size: 14px;
+      color: var(--accent-1);
+      margin-bottom: 10px;
+      letter-spacing: 0.3px;
+    }
+    .table th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.4px; color: #6b7280; }
+    .table td { font-size: 14px; vertical-align: middle; }
+
+    /* ── Back link ── */
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--accent-2);
+      text-decoration: none;
+      margin-bottom: 16px;
+      transition: gap 0.2s;
+    }
+    .back-link:hover { gap: 10px; color: var(--accent-1); }
+
+    /* ── After-payment preview ── */
+    #afterBalance { transition: color 0.2s; }
+  </style>
+</head>
+<body>
+<div class="page-wrap">
+
+  <a href="{% url 'accounts:customer_detail' customer.id %}" class="back-link">
+    ← Back to {{ customer.name }}
+  </a>
+
+  <!-- Header -->
+  <div class="page-header">
+    <h4>💳 Add Payment</h4>
+    <small>Customer: <strong>{{ customer.name }}</strong></small>
+  </div>
+
+  <!-- ── Live balance banner (shows total outstanding) ── -->
+  <div class="balance-banner" id="balanceBanner">
+    <div>
+      <div class="label">Total Outstanding</div>
+      <div class="amount" id="currentBalance">₹ {{ total_outstanding|floatformat:2 }}</div>
+    </div>
+    <div style="text-align:right;">
+      <div class="label">Balance After Payment</div>
+      <div class="after" id="afterBalance">— Enter amount</div>
+    </div>
+  </div>
+
+  <!-- ── Breakdown: carried balance + prev month charges ── -->
+  <div class="breakdown-strip">
+    <span>📦 Carried Balance</span>
+    <span class="chip">₹ {{ customer.balance_amount|floatformat:2 }}</span>
+    <span class="sep">+</span>
+    <span>🥛 Last Month Charges</span>
+    <span class="chip">₹ {{ prev_month_total|floatformat:2 }}</span>
+    <span class="sep">=</span>
+    <span style="font-weight:700; color:#c0392b;">₹ {{ total_outstanding|floatformat:2 }}</span>
+  </div>
+
+  <!-- Form -->
+  <div class="form-card">
+    <form method="post" id="paymentForm">
+      {% csrf_token %}
+
+      {% if form.non_field_errors %}
+        <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+      {% endif %}
+
+      <!-- Amount -->
+      <div class="mb-3">
+        <label for="{{ form.amount.id_for_label }}" class="form-label">Payment Amount (₹)</label>
+        {{ form.amount }}
+        {% if form.amount.errors %}
+          <div class="text-danger mt-1" style="font-size:13px;">{{ form.amount.errors }}</div>
+        {% endif %}
+      </div>
+
+      <!-- Date -->
+      <div class="mb-3">
+        <label for="{{ form.paid_on.id_for_label }}" class="form-label">Payment Date</label>
+        {{ form.paid_on }}
+        {% if form.paid_on.errors %}
+          <div class="text-danger mt-1" style="font-size:13px;">{{ form.paid_on.errors }}</div>
+        {% endif %}
+      </div>
+
+      <!-- Note -->
+      <div class="mb-4">
+        <label for="{{ form.note.id_for_label }}" class="form-label">
+          Note <span style="font-weight:400;color:#9ca3af;">(optional)</span>
+        </label>
+        {{ form.note }}
+        {% if form.note.errors %}
+          <div class="text-danger mt-1" style="font-size:13px;">{{ form.note.errors }}</div>
+        {% endif %}
+      </div>
+
+      <div class="d-flex gap-3 align-items-center">
+        <button type="submit" class="btn-pay">✅ Record Payment</button>
+        <a href="{% url 'accounts:customer_detail' customer.id %}" class="btn btn-outline-secondary">Cancel</a>
+      </div>
+    </form>
+
+    <!-- ── Recent Payments ── -->
+    {% if recent_payments %}
+    <div class="recent-section">
+      <h6>📜 Recent Payments</h6>
+      <div class="table-responsive">
+        <table class="table table-sm table-hover">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Amount (₹)</th>
+              <th>Note</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in recent_payments %}
+            <tr>
+              <td>{{ p.paid_on|date:"d M Y" }}</td>
+              <td class="text-success fw-bold">₹ {{ p.amount|floatformat:2 }}</td>
+              <td class="text-muted">{{ p.note|default:"—" }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
+  </div><!-- /form-card -->
+</div><!-- /page-wrap -->
+
+<script>
+  // total_outstanding = customer.balance_amount + prev_month_total (computed in view)
+  const balanceRaw  = parseFloat("{{ total_outstanding|floatformat:2 }}");
+  const amountInput = document.getElementById('{{ form.amount.id_for_label }}');
+  const afterEl     = document.getElementById('afterBalance');
+
+  function updatePreview() {
+    const entered   = parseFloat(amountInput.value) || 0;
+    const remaining = balanceRaw - entered;
+
+    if (entered <= 0) {
+      afterEl.textContent = '— Enter amount';
+      afterEl.style.color = '#2e7d32';
+    } else if (entered > balanceRaw) {
+      afterEl.textContent = '⚠ Exceeds total outstanding';
+      afterEl.style.color = '#c0392b';
+    } else {
+      afterEl.textContent = '₹ ' + remaining.toFixed(2);
+      afterEl.style.color = remaining > 0 ? '#e65100' : '#2e7d32';
+    }
+  }
+
+  amountInput.addEventListener('input', updatePreview);
+
+  // Default the date input to today
+  const dateInput = document.getElementById('{{ form.paid_on.id_for_label }}');
+  if (dateInput && !dateInput.value) {
+    dateInput.value = new Date().toISOString().split('T')[0];
+  }
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
