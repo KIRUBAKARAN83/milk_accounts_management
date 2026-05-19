@@ -28,14 +28,10 @@ ALLOWED_HOSTS = os.getenv(
 # ------------------------------------------------------------------------------
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-
 if not GROQ_API_KEY:
     raise RuntimeError("GROQ_API_KEY not found in environment variables")
 
-GROQ_MODEL = os.getenv(
-    "GROQ_MODEL",
-    "llama-3.1-8b-instant"
-)
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
 
 # ------------------------------------------------------------------------------
 # Applications
@@ -57,7 +53,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
-    "whitenoise.middleware.WhiteNoiseMiddleware",          # ← Render static files
+    "whitenoise.middleware.WhiteNoiseMiddleware",  # Render static files
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -92,18 +88,12 @@ TEMPLATES = [
 # ------------------------------------------------------------------------------
 # Database — Supabase (PostgreSQL)
 # ------------------------------------------------------------------------------
-# Supabase gives you a DATABASE_URL of the form:
-#   postgresql://postgres:[password]@db.[ref].supabase.co:5432/postgres
-#
-# We parse it at runtime so the same settings.py works locally (SQLite fallback)
-# and on Render (Supabase Postgres).
-# ------------------------------------------------------------------------------
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if DATABASE_URL:
     parsed = urlparse(DATABASE_URL)
-    scheme = parsed.scheme.split("+")[0]   # handles "postgres+psycopg2://" etc.
+    scheme = parsed.scheme.split("+")[0]   # handles "postgres+psycopg2://"
 
     if scheme in ("postgres", "postgresql"):
         DATABASES = {
@@ -116,13 +106,11 @@ if DATABASE_URL:
                 "PORT": parsed.port or 5432,
                 "CONN_MAX_AGE": 600,
                 "OPTIONS": {
-                    # Supabase requires SSL; use "require" or "verify-full"
                     "sslmode": os.getenv("DB_SSLMODE", "require"),
                 },
             }
         }
     else:
-        # Fallback: sqlite (useful for local dev with a sqlite DATABASE_URL)
         DATABASES = {
             "default": {
                 "ENGINE": "django.db.backends.sqlite3",
@@ -130,7 +118,6 @@ if DATABASE_URL:
             }
         }
 else:
-    # Local dev with no DATABASE_URL at all → plain SQLite
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
@@ -158,7 +145,6 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
-# WhiteNoise compressed manifest storage for Render (production)
 if not DEBUG:
     STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
@@ -189,7 +175,6 @@ TWILIO_WHATSAPP_NUMBER = os.getenv("TWILIO_WHATSAPP_NUMBER", "whatsapp:+14155238
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
-# Render's public URL — add your custom domain here too if you have one
 RENDER_EXTERNAL_HOSTNAME = os.getenv("RENDER_EXTERNAL_HOSTNAME")
 if RENDER_EXTERNAL_HOSTNAME:
     ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
@@ -203,14 +188,13 @@ if RENDER_EXTERNAL_HOSTNAME:
     CSRF_TRUSTED_ORIGINS.append(f"https://{RENDER_EXTERNAL_HOSTNAME}")
 
 if os.getenv("CSRF_TRUSTED_ORIGINS"):
-    CSRF_TRUSTED_ORIGINS += os.getenv("CSRF_TRUSTED_ORIGINS").split(",")  # pyright: ignore[reportOptionalMemberAccess]
+    CSRF_TRUSTED_ORIGINS += os.getenv("CSRF_TRUSTED_ORIGINS").split(",")
 
 CSRF_COOKIE_SECURE  = not DEBUG
 SESSION_COOKIE_SECURE = not DEBUG
 
-# Render forces HTTPS, so turn on HSTS in production
 if not DEBUG:
-    SECURE_HSTS_SECONDS           = 31536000   # 1 year
+    SECURE_HSTS_SECONDS            = 31536000
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD            = True
     SECURE_SSL_REDIRECT            = True
