@@ -3,24 +3,25 @@ Django>=4.2,<5.0
 djangorestframework>=3.14
 django-environ
 dj-database-url>=2.1
+python-dotenv>=1.0.1
 
 # ─── Database ───────────────────────────────────────────────
-psycopg2-binary>=2.9
+psycopg2-binary>=2.9.9   # PostgreSQL driver (Supabase)
 
 # ─── Server & Static Files ──────────────────────────────────
-gunicorn>=21.2
-whitenoise>=6.6
+gunicorn>=21.2.0
+whitenoise>=6.7.0        # Static file serving on Render
 
 # ─── PDF Generation ─────────────────────────────────────────
 xhtml2pdf
-reportlab>=4.0
+reportlab>=4.1.0
 pymupdf
 
 # ─── Image Processing & OCR ─────────────────────────────────
-opencv-python
-numpy
+opencv-python-headless    # use headless build on servers
+numpy>=1.26.4
 easyocr
-Pillow
+Pillow>=10.2.0
 
 # ─── AI / LLM ───────────────────────────────────────────────
 groq
@@ -30,27 +31,6 @@ rapidfuzz
 
 # ─── Date & Time Utilities ──────────────────────────────────
 python-dateutil>=2.8
-
-
-# ── Add these to your existing requirements.txt ──────────────────────────────
-
-# PostgreSQL driver (required for Supabase)
-psycopg2-binary>=2.9.9
-
-# Static file serving on Render (replaces the need for nginx for static files)
-whitenoise>=6.7.0
-
-# Already likely in your project — confirm these are present:
-# django>=4.2
-# python-dotenv>=1.0
-# groq
-# easyocr
-# opencv-python-headless      ← use -headless on servers (no GUI deps)
-# Pillow
-# rapidfuzz
-# reportlab  (or whatever your pdf_generation uses)
-# twilio      (if using WhatsApp feature)
-# gunicorn    ← REQUIRED as the production WSGI server on Render
 
 # ─── SMS / Communication ────────────────────────────────────
 twilio>=9.0.0
