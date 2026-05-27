@@ -551,15 +551,48 @@ def calculator_view(request):
 @login_required(login_url='login')
 def upload_entries(request):
     if request.method == "POST":
-        uploaded_file = request.FILES.get("file")
-        if not uploaded_file:
-            return render(request, "accounts/upload_entries.html", {"error": "No file selected"})
+        source = request.POST.get("source", "file")
 
-        path = default_storage.save(
-            f"uploads/{uploaded_file.name}",
-            ContentFile(uploaded_file.read()),
-        )
+        # ── Branch 1: Camera capture (base64 data URI) ──────────────────────
+        if source == "camera":
+            image_data = request.POST.get("camera_image_data", "").strip()
+            if not image_data:
+                return render(request, "accounts/upload_entries.html", {
+                    "error": "No camera image received. Please capture a photo first."
+                })
 
+            # Strip the data URI prefix: "data:image/jpeg;base64,<data>"
+            if "," in image_data:
+                image_data = image_data.split(",", 1)[1]
+
+            try:
+                import base64
+                image_bytes = base64.b64decode(image_data)
+            except Exception:
+                return render(request, "accounts/upload_entries.html", {
+                    "error": "Camera image data is corrupted. Please try again."
+                })
+
+            filename = f"camera_{timezone.now().strftime('%Y%m%d_%H%M%S')}.jpg"
+            path = default_storage.save(
+                f"uploads/{filename}",
+                ContentFile(image_bytes),
+            )
+
+        # ── Branch 2: Regular file upload ────────────────────────────────────
+        else:
+            uploaded_file = request.FILES.get("file")
+            if not uploaded_file:
+                return render(request, "accounts/upload_entries.html", {
+                    "error": "No file selected. Please choose a file or use the camera."
+                })
+
+            path = default_storage.save(
+                f"uploads/{uploaded_file.name}",
+                ContentFile(uploaded_file.read()),
+            )
+
+        # ── AI processing (common for both branches) ─────────────────────────
         try:
             extracted_data = process_file_with_ai(path)
         except Exception as e:
