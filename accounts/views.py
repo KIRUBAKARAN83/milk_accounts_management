@@ -33,7 +33,6 @@ from .forms import MilkEntryForm, CustomerForm, PaymentForm
 from .pdf_generation import generate_bill_pdf
 
 # Module-level logger — replaces flat-file ai_audit_log.txt
-# Render streams these to its log dashboard in real-time
 logger = logging.getLogger(__name__)
 
 
@@ -56,7 +55,7 @@ def home(request):
         overdue_customers = []
 
         for customer in Customer.objects.filter(balance_amount__gt=0):
-            if customer.id in snoozed:  # type: ignore
+            if customer.id in snoozed:
                 continue
             first_entry = (
                 MilkEntry.objects
@@ -119,8 +118,8 @@ def customer_list(request):
     customers = Customer.objects.all()
     for customer in customers:
         total_ml              = MilkEntry.objects.filter(customer=customer).aggregate(total=Sum('quantity_ml'))['total'] or 0
-        customer.total_ml     = total_ml  # type: ignore
-        customer.total_litres = round(Decimal(total_ml) / Decimal(1000), 2) if total_ml else Decimal(0)  # type: ignore
+        customer.total_ml     = total_ml
+        customer.total_litres = round(Decimal(total_ml) / Decimal(1000), 2) if total_ml else Decimal(0)
     return render(request, 'accounts/customer_list.html', {'customers': customers})
 
 
@@ -168,7 +167,7 @@ def edit_customer(request, customer_id):
         form = CustomerForm(request.POST, instance=customer)
         if form.is_valid():
             form.save()
-            return redirect('accounts:customer_detail', customer_id=customer.id)  # type: ignore
+            return redirect('accounts:customer_detail', customer_id=customer.id)
     else:
         form = CustomerForm(instance=customer)
     return render(request, 'accounts/customer_form.html', {
@@ -218,7 +217,7 @@ def edit_entry(request, entry_id):
         form = MilkEntryForm(request.POST, instance=entry)
         if form.is_valid():
             form.save()
-            return redirect('accounts:customer_detail', customer_id=entry.customer.id)  # type: ignore
+            return redirect('accounts:customer_detail', customer_id=entry.customer.id)
     else:
         form = MilkEntryForm(instance=entry)
     return render(request, 'accounts/entry_form.html', {'form': form, 'title': 'Edit Milk Entry'})
@@ -228,7 +227,7 @@ def edit_entry(request, entry_id):
 @require_http_methods(["POST"])
 def delete_entry(request, entry_id):
     entry       = get_object_or_404(MilkEntry, id=entry_id)
-    customer_id = entry.customer.id  # type: ignore
+    customer_id = entry.customer.id
     entry.delete()
     return redirect('accounts:customer_detail', customer_id=customer_id)
 
@@ -253,10 +252,10 @@ def bill_pdf(request, customer_id, year=None, month=None):
         entries  = MilkEntry.objects.filter(
             customer=customer, date__year=year, date__month=month
         ).order_by('date')
-        filename = f"bill_{customer.name.replace(' ', '_')}_{year}_{month:02d}"  # type: ignore
+        filename = f"bill_{customer.name.replace(' ', '_')}_{year}_{month:02d}"
     else:
         entries  = MilkEntry.objects.filter(customer=customer).order_by('date')
-        filename = f"bill_{customer.name.replace(' ', '_')}_all"  # type: ignore
+        filename = f"bill_{customer.name.replace(' ', '_')}_all"
 
     total_ml     = entries.aggregate(total=Sum('quantity_ml'))['total'] or 0
     total_litres = round(Decimal(total_ml) / Decimal(1000), 2) if total_ml else Decimal(0)
@@ -315,7 +314,7 @@ def monthly_summary(request):
         summary      = {}
         total_ml_all = 0
         for entry in entries:
-            cid = entry.customer.id  # type: ignore
+            cid = entry.customer.id
             if cid not in summary:
                 summary[cid] = {'name': entry.customer.name, 'total_ml': 0, 'amount': Decimal(0)}
             summary[cid]['total_ml'] += entry.quantity_ml
@@ -373,7 +372,7 @@ def monthly_summary(request):
 # PAYMENT VIEWS
 # =========================================================
 
-@login_required(login_url='login')   # FIX: was missing @login_required
+@login_required(login_url='login')
 def add_payment(request, customer_id):
     customer = get_object_or_404(Customer, id=customer_id)
 
@@ -382,13 +381,31 @@ def add_payment(request, customer_id):
     last_month_end      = first_of_this_month - datetime.timedelta(days=1)
     last_month_start    = last_month_end.replace(day=1)
 
+    # ── Compute last month's milk charges (for display only) ──────────────
+    # These are NOT yet added to balance_amount in the DB.
+    # balance_amount is a running ledger updated only when:
+    #   (a) a payment is recorded  → balance -= paid_amount
+    #   (b) month-end roll-over    → balance += month_charges  (separate process)
+    # We show total_outstanding = balance + last_month so the customer can
+    # see everything they owe, but we write only balance_amount back.
     total_qty_ml = (
         MilkEntry.objects
         .filter(customer=customer, date__gte=last_month_start, date__lte=last_month_end)
         .aggregate(total=Sum('quantity_ml'))['total'] or 0
     )
-    prev_month_total  = Decimal(total_qty_ml) / Decimal(1000) * Decimal(str(PRICE_PER_LITRE))
+    prev_month_total  = round(Decimal(total_qty_ml) / Decimal(1000) * Decimal(str(PRICE_PER_LITRE)), 2)
+
+    # total_outstanding is shown in the UI so the customer knows full dues.
+    # It is NOT used to compute the new balance on save.
     total_outstanding = customer.balance_amount + prev_month_total
+
+    # ── Summarise all previous payments for this customer ─────────────────
+    all_payments = (
+        Payment.objects
+        .filter(customer=customer)
+        .order_by('-paid_on', '-created_at')
+    )
+    total_already_paid = all_payments.aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
 
     if request.method == 'POST':
         form = PaymentForm(request.POST)
@@ -400,25 +417,34 @@ def add_payment(request, customer_id):
                 payment          = form.save(commit=False)
                 payment.customer = customer
                 payment.save()
-                customer.balance_amount = total_outstanding - paid_amount
+
+                # ── FIX: deduct from balance_amount ONLY ──────────────────
+                # Previously: customer.balance_amount = total_outstanding - paid_amount
+                # That double-counted prev_month_total (balance already carries
+                # all prior unpaid charges; adding last month again inflated it).
+                # Correct logic: payment reduces the stored running balance.
+                customer.balance_amount = customer.balance_amount - paid_amount
                 customer.save()
+
                 messages.success(
                     request,
-                    f'Payment of ₹{paid_amount:.2f} recorded. '
-                    f'New balance: ₹{customer.balance_amount:.2f}'
+                    f'Payment of ₹{paid_amount:.2f} recorded for {customer.name}. '
+                    f'Updated balance: ₹{customer.balance_amount:.2f}'
                 )
-                return redirect('accounts:customer_detail', customer_id=customer.id)  # type: ignore
+                return redirect('accounts:customer_detail', customer_id=customer.id)
     else:
         form = PaymentForm()
 
     recent_payments = Payment.objects.filter(customer=customer).order_by('-paid_on')[:5]
 
     return render(request, 'accounts/payment_form.html', {
-        'form':              form,
-        'customer':          customer,
-        'prev_month_total':  prev_month_total,
-        'total_outstanding': total_outstanding,
-        'recent_payments':   recent_payments,
+        'form':               form,
+        'customer':           customer,
+        'prev_month_total':   prev_month_total,
+        'total_outstanding':  total_outstanding,
+        'total_already_paid': round(total_already_paid, 2),
+        'all_payments':       all_payments,
+        'recent_payments':    recent_payments,
     })
 
 
@@ -479,6 +505,7 @@ def edit_payment(request, payment_id):
             old_amount              = payment.amount
             new_amount              = form.cleaned_data['amount']
             form.save()
+            # Adjust balance: undo old payment, apply new payment
             customer.balance_amount = customer.balance_amount + old_amount - new_amount
             customer.save()
             messages.success(request, f'Payment updated. New balance: ₹{customer.balance_amount:.2f}')
@@ -496,6 +523,7 @@ def edit_payment(request, payment_id):
 def delete_payment(request, payment_id):
     payment  = get_object_or_404(Payment, id=payment_id)
     customer = payment.customer
+    # Restore balance: deleting a payment means customer owes that amount again
     customer.balance_amount += payment.amount
     customer.save()
     payment.delete()
@@ -511,7 +539,7 @@ def delete_payment(request, payment_id):
 # MISC
 # =========================================================
 
-@login_required(login_url='login')   # FIX: was missing @login_required
+@login_required(login_url='login')
 def calculator_view(request):
     return render(request, "accounts/calculator.html")
 
@@ -552,7 +580,6 @@ def preview_entries(request):
 
     existing_entries      = list(MilkEntry.objects.values_list("customer__name", "date"))
     existing_entries      = [[name, str(d)] for name, d in existing_entries]
-    # ensure_ascii=False keeps Tamil chars intact; used with |safe in template
     existing_entries_json = json.dumps(existing_entries, ensure_ascii=False)
 
     return render(request, "accounts/preview_entries.html", {
@@ -622,8 +649,6 @@ def confirm_entries(request):
                 skipped_entries.append({"row": i, "reason": str(e)})
                 continue
 
-    # FIX: replaced flat-file audit log (wiped on every Render redeploy)
-    # with Django logger — visible in Render dashboard → Logs in real-time
     logger.info("AI_AUDIT %s", json.dumps({
         "user":            request.user.username,
         "saved":           saved_entries,
@@ -636,25 +661,15 @@ def confirm_entries(request):
 
 
 # =========================================================
-# AI CORE — OCR.Space API  (replaces EasyOCR + OpenCV)
-# =========================================================
-# FIX: Replaced EasyOCR + opencv-python-headless with OCR.Space REST API.
-# Benefits:
-#   - No heavy ML model downloads at startup (~1.5 GB saved on Render)
-#   - No GPU/CUDA dependency issues on server
-#   - Supports Tamil natively via language="tam"
-#   - Free tier: 25,000 requests/month
-# Get your free API key at: https://ocr.space/ocrapi
-# Set OCRSPACE_API_KEY in settings.py / Render environment variables.
+# AI CORE — OCR.Space API
 # =========================================================
 
 def _call_ocrspace_api(file_bytes, filename, language="eng"):
     """
     Send raw bytes to the OCR.Space API and return extracted text.
-
     language codes: "eng" = English | "tam" = Tamil
     OCREngine 2 is better for handwriting.
-    isTable=True preserves column/row structure (name + quantity columns).
+    isTable=True preserves column/row structure.
     """
     api_key  = getattr(settings, "OCRSPACE_API_KEY", "helloworld")
 
@@ -674,8 +689,8 @@ def _call_ocrspace_api(file_bytes, filename, language="eng"):
         "isOverlayRequired": "false",
         "detectOrientation": "true",
         "scale":             "true",
-        "OCREngine":         "2",      # Engine 2 = better for handwriting
-        "isTable":           "true",   # preserve column structure
+        "OCREngine":         "2",
+        "isTable":           "true",
     }
 
     response = requests.post(
@@ -703,26 +718,21 @@ def _call_ocrspace_api(file_bytes, filename, language="eng"):
 def _extract_from_image(file_path):
     """
     Extract text from an image using OCR.Space API.
-    Two passes (English + Tamil) so mixed-script dairy registers
-    are handled correctly.
+    Two passes (English + Tamil) for mixed-script dairy registers.
     """
     filename = os.path.basename(file_path)
 
     with default_storage.open(file_path, "rb") as f:
         file_bytes = f.read()
 
-    # Pass 1: English — digits, column headers, date labels
     text_eng = _call_ocrspace_api(file_bytes, filename, language="eng")
 
-    # Pass 2: Tamil — customer names written in Tamil script
     try:
         text_tam = _call_ocrspace_api(file_bytes, filename, language="tam")
     except Exception as exc:
         print(f"[OCR] Tamil pass failed (non-fatal): {exc}")
         text_tam = ""
 
-    # Use whichever pass produced more text as the primary,
-    # then append the other for completeness
     if len(text_tam) > len(text_eng):
         return (text_tam + "\n" + text_eng).strip()
     return (text_eng + "\n" + text_tam).strip()
@@ -733,12 +743,6 @@ def _extract_from_pdf(file_path):
     Two-stage PDF extraction:
       Stage 1 — pdfplumber (fast, lossless for digital PDFs)
       Stage 2 — OCR.Space per page (fallback for scanned/image PDFs)
-
-    FIX: page.extract_text() without layout=True collapses column-aligned
-    rows. Two strategies used:
-      1. extract_text(layout=True) preserves x-position spacing.
-      2. words-based reconstruction groups words by y-coordinate so every
-         token on the page is emitted in correct left-to-right order.
     """
     try:
         import pdfplumber
@@ -777,7 +781,6 @@ def _extract_from_pdf(file_path):
     if text:
         return text
 
-    # Stage 2: scanned PDF — send each page image to OCR.Space
     print("[PDF] No selectable text — falling back to OCR.Space per page")
     try:
         from pdf2image import convert_from_bytes
@@ -890,14 +893,14 @@ def _extract_from_rtf(file_path):
 
 def _extract_from_odt(file_path):
     try:
-        from odf import teletype        # type: ignore
-        from odf.opendocument import load as odf_load  # type: ignore
+        from odf import teletype
+        from odf.opendocument import load as odf_load
     except ImportError:
         raise Exception("odfpy is required for .odt extraction. Run: pip install odfpy")
 
     with default_storage.open(file_path, "rb") as f:
         doc = odf_load(io.BytesIO(f.read()))
-    return teletype.extractText(doc.text)  # type: ignore
+    return teletype.extractText(doc.text)
 
 
 # =========================================================
@@ -1045,7 +1048,7 @@ Text:
         temperature=0,
     )
 
-    raw_output   = response.choices[0].message.content.strip()  # type: ignore
+    raw_output   = response.choices[0].message.content.strip()
     print("[AI RAW OUTPUT]", raw_output[:500])
 
     clean_output = re.sub(r"```(?:json)?\s*", "", raw_output).strip()
