@@ -23,7 +23,7 @@
       justify-content: center;
       padding: 40px 16px;
     }
-    .page-wrap { width: 100%; max-width: 620px; }
+    .page-wrap { width: 100%; max-width: 660px; }
 
     /* ── Page header ── */
     .page-header {
@@ -39,7 +39,7 @@
     .balance-banner {
       background: #fff8e1;
       border: 1px solid #ffe082;
-      border-radius: 0;
+      border-top: none;
       padding: 14px 28px;
       display: flex;
       align-items: center;
@@ -49,7 +49,7 @@
     }
     .balance-banner .label  { font-size: 13px; color: #7a6000; font-weight: 600; }
     .balance-banner .amount { font-size: 22px; font-weight: 800; color: #c0392b; }
-    .balance-banner .after  { font-size: 13px; color: #2e7d32; font-weight: 600; }
+    .balance-banner .after  { font-size: 14px; font-weight: 700; }
 
     /* ── Breakdown strip ── */
     .breakdown-strip {
@@ -74,6 +74,28 @@
     }
     .breakdown-strip .sep { color: #9ca3af; font-size: 16px; }
 
+    /* ── Already paid strip ── */
+    .paid-strip {
+      background: #f0fff4;
+      border: 1px solid #a7f3c1;
+      border-top: none;
+      padding: 8px 28px;
+      font-size: 13px;
+      color: #166534;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .paid-strip .chip-green {
+      background: #fff;
+      border: 1px solid #a7f3c1;
+      border-radius: 20px;
+      padding: 2px 12px;
+      font-weight: 700;
+      color: #15803d;
+    }
+
     /* ── Form card ── */
     .form-card {
       background: var(--card);
@@ -97,17 +119,26 @@
     .btn-pay:hover { transform: translateY(-3px); box-shadow: 0 12px 28px rgba(30,60,114,0.28); color: #fff; }
     .btn-pay:active { transform: scale(0.97); }
 
-    /* ── Recent payments table ── */
-    .recent-section { margin-top: 32px; }
-    .recent-section h6 {
+    /* ── Payment history section ── */
+    .history-section { margin-top: 32px; }
+    .history-section h6 {
       font-weight: 700;
       font-size: 14px;
       color: var(--accent-1);
       margin-bottom: 10px;
       letter-spacing: 0.3px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid #e8f0fe;
     }
-    .table th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.4px; color: #6b7280; }
-    .table td { font-size: 14px; vertical-align: middle; }
+    .table th {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      color: #6b7280;
+      background: #f9fafb;
+    }
+    .table td { font-size: 13px; vertical-align: middle; }
+    .total-paid-row td { background: #f0fff4; font-weight: 700; color: #166534; }
 
     /* ── Back link ── */
     .back-link {
@@ -125,6 +156,15 @@
 
     /* ── After-payment preview ── */
     #afterBalance { transition: color 0.2s; }
+
+    /* ── Form inputs ── */
+    .form-control, .form-select {
+      border-radius: 8px;
+      border: 1px solid #e2e8f0;
+      font-size: 14px;
+      padding: 10px 14px;
+    }
+    .form-control:focus { border-color: var(--accent-2); box-shadow: 0 0 0 3px rgba(42,82,152,0.1); }
   </style>
 </head>
 <body>
@@ -134,42 +174,51 @@
     ← Back to {{ customer.name }}
   </a>
 
-  <!-- Header -->
+  <!-- ── Header ── -->
   <div class="page-header">
     <h4>💳 Add Payment</h4>
     <small>Customer: <strong>{{ customer.name }}</strong></small>
   </div>
 
-  <!-- ── Live balance banner (shows total outstanding) ── -->
+  <!-- ── Live balance banner ── -->
   <div class="balance-banner" id="balanceBanner">
     <div>
-      <div class="label">Total Outstanding</div>
-      <div class="amount" id="currentBalance">₹ {{ total_outstanding|floatformat:2 }}</div>
+      <div class="label">Current Stored Balance</div>
+      <div class="amount" id="currentBalance">₹ {{ customer.balance_amount|floatformat:2 }}</div>
     </div>
     <div style="text-align:right;">
-      <div class="label">Balance After Payment</div>
-      <div class="after" id="afterBalance">— Enter amount</div>
+      <div class="label">Balance After This Payment</div>
+      <div class="after" id="afterBalance" style="color:#9ca3af;">— Enter amount</div>
     </div>
   </div>
 
-  <!-- ── Breakdown: carried balance + prev month charges ── -->
+  <!-- ── Breakdown: stored balance + last month charges (display only) ── -->
   <div class="breakdown-strip">
-    <span>📦 Carried Balance</span>
+    <span>📦 Stored Balance</span>
     <span class="chip">₹ {{ customer.balance_amount|floatformat:2 }}</span>
     <span class="sep">+</span>
-    <span>🥛 Last Month Charges</span>
+    <span>🥛 Last Month (unpaid)</span>
     <span class="chip">₹ {{ prev_month_total|floatformat:2 }}</span>
     <span class="sep">=</span>
-    <span style="font-weight:700; color:#c0392b;">₹ {{ total_outstanding|floatformat:2 }}</span>
+    <span style="font-weight:700; color:#c0392b;" title="For reference only. Payment reduces stored balance.">
+      ₹ {{ total_outstanding|floatformat:2 }} total owed
+    </span>
   </div>
 
-  <!-- Form -->
+  <!-- ── Already paid by this customer ── -->
+  <div class="paid-strip">
+    <span>✅ Total already paid by {{ customer.name }}:</span>
+    <span class="chip-green">₹ {{ total_already_paid|floatformat:2 }}</span>
+    <span style="color:#6b7280;">({{ all_payments.count }} payment{{ all_payments.count|pluralize }})</span>
+  </div>
+
+  <!-- ── Form ── -->
   <div class="form-card">
     <form method="post" id="paymentForm">
       {% csrf_token %}
 
       {% if form.non_field_errors %}
-        <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+        <div class="alert alert-danger py-2">{{ form.non_field_errors }}</div>
       {% endif %}
 
       <!-- Amount -->
@@ -179,6 +228,8 @@
         {% if form.amount.errors %}
           <div class="text-danger mt-1" style="font-size:13px;">{{ form.amount.errors }}</div>
         {% endif %}
+        <!-- Live hint under amount field -->
+        <div id="amountHint" class="mt-1" style="font-size:12px; color:#6b7280;"></div>
       </div>
 
       <!-- Date -->
@@ -193,7 +244,7 @@
       <!-- Note -->
       <div class="mb-4">
         <label for="{{ form.note.id_for_label }}" class="form-label">
-          Note <span style="font-weight:400;color:#9ca3af;">(optional)</span>
+          Note <span style="font-weight:400;color:#9ca3af;">(optional, e.g. cash / UPI)</span>
         </label>
         {{ form.note }}
         {% if form.note.errors %}
@@ -201,61 +252,99 @@
         {% endif %}
       </div>
 
-      <div class="d-flex gap-3 align-items-center">
+      <div class="d-flex gap-3 align-items-center flex-wrap">
         <button type="submit" class="btn-pay">✅ Record Payment</button>
         <a href="{% url 'accounts:customer_detail' customer.id %}" class="btn btn-outline-secondary">Cancel</a>
       </div>
     </form>
 
-    <!-- ── Recent Payments ── -->
-    {% if recent_payments %}
-    <div class="recent-section">
-      <h6>📜 Recent Payments</h6>
+    <!-- ── Full Payment History for this customer ── -->
+    {% if all_payments %}
+    <div class="history-section">
+      <h6>📜 All Payments — {{ customer.name }}</h6>
       <div class="table-responsive">
-        <table class="table table-sm table-hover">
+        <table class="table table-sm table-hover mb-0">
           <thead>
             <tr>
+              <th>#</th>
               <th>Date</th>
               <th>Amount (₹)</th>
               <th>Note</th>
             </tr>
           </thead>
           <tbody>
-            {% for p in recent_payments %}
+            {% for p in all_payments %}
             <tr>
+              <td class="text-muted">{{ forloop.counter }}</td>
               <td>{{ p.paid_on|date:"d M Y" }}</td>
               <td class="text-success fw-bold">₹ {{ p.amount|floatformat:2 }}</td>
               <td class="text-muted">{{ p.note|default:"—" }}</td>
             </tr>
             {% endfor %}
           </tbody>
+          <tfoot>
+            <tr class="total-paid-row">
+              <td colspan="2" class="text-end">Total Paid</td>
+              <td>₹ {{ total_already_paid|floatformat:2 }}</td>
+              <td></td>
+            </tr>
+          </tfoot>
         </table>
       </div>
     </div>
+    {% else %}
+      <div class="mt-4 text-muted" style="font-size:13px;">No previous payments recorded for {{ customer.name }}.</div>
     {% endif %}
 
   </div><!-- /form-card -->
 </div><!-- /page-wrap -->
 
 <script>
-  // total_outstanding = customer.balance_amount + prev_month_total (computed in view)
-  const balanceRaw  = parseFloat("{{ total_outstanding|floatformat:2 }}");
+  /**
+   * FIX: balanceRaw = customer.balance_amount (stored running balance).
+   *
+   * Previously this used total_outstanding (balance + prev_month_total),
+   * which caused the "Balance After Payment" preview to be wrong AND
+   * the backend was accidentally writing total_outstanding - paid back
+   * to balance_amount, inflating it.
+   *
+   * Now:
+   *   - Preview shows: customer.balance_amount - entered  (matches what backend saves)
+   *   - total_outstanding is shown for information only in the breakdown strip
+   */
+  const balanceRaw    = parseFloat("{{ customer.balance_amount|floatformat:2 }}");
+  const outstandingRaw = parseFloat("{{ total_outstanding|floatformat:2 }}");
+
   const amountInput = document.getElementById('{{ form.amount.id_for_label }}');
   const afterEl     = document.getElementById('afterBalance');
+  const hintEl      = document.getElementById('amountHint');
 
   function updatePreview() {
-    const entered   = parseFloat(amountInput.value) || 0;
-    const remaining = balanceRaw - entered;
+    const entered    = parseFloat(amountInput.value) || 0;
+    const newBalance = balanceRaw - entered;
 
     if (entered <= 0) {
       afterEl.textContent = '— Enter amount';
-      afterEl.style.color = '#2e7d32';
-    } else if (entered > balanceRaw) {
-      afterEl.textContent = '⚠ Exceeds total outstanding';
+      afterEl.style.color = '#9ca3af';
+      hintEl.textContent  = '';
+    } else if (entered > outstandingRaw) {
+      afterEl.textContent = '⚠ Exceeds total owed';
       afterEl.style.color = '#c0392b';
+      hintEl.textContent  = `Paying more than total owed (₹${outstandingRaw.toFixed(2)}) — double-check.`;
+      hintEl.style.color  = '#c0392b';
     } else {
-      afterEl.textContent = '₹ ' + remaining.toFixed(2);
-      afterEl.style.color = remaining > 0 ? '#e65100' : '#2e7d32';
+      afterEl.textContent = '₹ ' + newBalance.toFixed(2);
+      afterEl.style.color = newBalance > 0 ? '#e65100' : (newBalance === 0 ? '#166534' : '#9333ea');
+      if (newBalance < 0) {
+        hintEl.textContent = `Overpayment of ₹${Math.abs(newBalance).toFixed(2)} — customer will have a credit.`;
+        hintEl.style.color = '#9333ea';
+      } else if (newBalance === 0) {
+        hintEl.textContent = '🎉 Fully settled!';
+        hintEl.style.color = '#166534';
+      } else {
+        hintEl.textContent = `₹${newBalance.toFixed(2)} will remain as balance.`;
+        hintEl.style.color = '#6b7280';
+      }
     }
   }
 
