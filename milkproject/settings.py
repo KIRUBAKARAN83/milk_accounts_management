@@ -32,7 +32,7 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 if not GROQ_API_KEY:
     raise RuntimeError("GROQ_API_KEY not found in environment variables")
 
-GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
+GROQ_MODEL = os.getenv("GROQ_MODEL","openai/gpt-oss-120b")
 
 # ------------------------------------------------------------------------------
 # OCR.Space Configuration
