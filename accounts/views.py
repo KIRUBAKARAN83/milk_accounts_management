@@ -10,9 +10,10 @@ import subprocess
 import datetime
 import calendar
 import requests
+import uuid
 
 from groq import Groq
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from datetime import date, timedelta
 
 from django.shortcuts import render, redirect, get_object_or_404
@@ -21,6 +22,7 @@ from django.views.decorators.http import require_http_methods
 from django.db.models import Sum
 from django.db import transaction
 from django.utils import timezone
+from django.middleware.csrf import get_token
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.files.base import ContentFile
@@ -28,7 +30,7 @@ from django.core.files.storage import default_storage
 from django.utils.dateparse import parse_date
 from django.conf import settings
 
-from .models import Customer, MilkEntry, Payment, PRICE_PER_LITRE
+from .models import Customer, MilkEntry, Payment, OfflineMutation, PRICE_PER_LITRE
 from .forms import MilkEntryForm, CustomerForm, PaymentForm
 from .pdf_generation import generate_bill_pdf
 
@@ -70,6 +72,278 @@ def service_worker(request):
     response["Service-Worker-Allowed"] = "/"
     response["Cache-Control"] = "no-cache"
     return response
+
+
+@login_required(login_url='login')
+@require_http_methods(["GET"])
+def offline_data(request):
+    customers = list(Customer.objects.order_by('name').values(
+        'id', 'name', 'balance_amount', 'updated_at'
+    ))
+    entries = list(MilkEntry.objects.order_by('date', 'id').values(
+        'id', 'customer_id', 'date', 'quantity_ml', 'updated_at'
+    ))
+    payments = list(Payment.objects.order_by('paid_on', 'id').values(
+        'id', 'customer_id', 'amount', 'paid_on', 'note', 'updated_at'
+    ))
+
+    for customer in customers:
+        customer['balance_amount'] = str(customer['balance_amount'])
+        customer['updated_at'] = customer['updated_at'].isoformat() if customer['updated_at'] else None
+    for entry in entries:
+        entry['date'] = entry['date'].isoformat()
+        entry['updated_at'] = entry['updated_at'].isoformat() if entry['updated_at'] else None
+    for payment in payments:
+        payment['amount'] = str(payment['amount'])
+        payment['paid_on'] = payment['paid_on'].isoformat()
+        payment['updated_at'] = payment['updated_at'].isoformat() if payment['updated_at'] else None
+
+    response = JsonResponse({
+        'user_id': request.user.pk,
+        'customers': customers,
+        'entries': entries,
+        'payments': payments,
+        'csrf_token': get_token(request),
+        'price_per_litre': str(PRICE_PER_LITRE),
+        'fetched_at': timezone.now().isoformat(),
+    })
+    response["Cache-Control"] = "no-store"
+    return response
+
+
+class OfflineSyncError(Exception):
+    def __init__(self, message, status=400):
+        self.message = message
+        self.status = status
+
+
+def _offline_decimal(value, label, positive=False):
+    try:
+        result = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise OfflineSyncError(f"{label} must be a valid number.") from exc
+    if not result.is_finite() or abs(result) > Decimal("99999999.99"):
+        raise OfflineSyncError(f"{label} is outside the supported range.")
+    if positive and result <= 0:
+        raise OfflineSyncError(f"{label} must be greater than zero.")
+    return result
+
+
+def _offline_version_matches(instance, expected):
+    actual = instance.updated_at.isoformat() if instance.updated_at else None
+    if expected != actual:
+        raise OfflineSyncError(
+            "This record changed on the server since it was downloaded. "
+            "Reload the latest data and reapply this change.",
+            status=409,
+        )
+
+
+def _apply_offline_mutation(action, data):
+    if not isinstance(data, dict):
+        raise OfflineSyncError("Mutation data must be an object.")
+
+    def customer_for(data_key='customer_id'):
+        try:
+            return Customer.objects.select_for_update().get(pk=int(data[data_key]))
+        except (KeyError, TypeError, ValueError, Customer.DoesNotExist) as exc:
+            raise OfflineSyncError("The selected customer is no longer available.", 409) from exc
+
+    if action == "customer.create":
+        name = str(data.get("name", "")).strip()
+        if not name or len(name) > 200:
+            raise OfflineSyncError("Customer name is required and must be 200 characters or fewer.")
+        customer = Customer.objects.create(
+            name=name,
+            balance_amount=_offline_decimal(data.get("balance_amount", "0"), "Balance"),
+        )
+        return {
+            "local_id": str(data.get("local_id", "")),
+            "id": customer.pk,
+            "versions": {"customers": {str(customer.pk): customer.updated_at.isoformat()}},
+        }
+
+    if action == "customer.update":
+        try:
+            customer = Customer.objects.select_for_update().get(pk=int(data["id"]))
+        except (KeyError, TypeError, ValueError, Customer.DoesNotExist) as exc:
+            raise OfflineSyncError("Customer no longer exists.", 409) from exc
+        _offline_version_matches(customer, data.get("expected_updated_at"))
+        name = str(data.get("name", "")).strip()
+        if not name or len(name) > 200:
+            raise OfflineSyncError("Customer name is required and must be 200 characters or fewer.")
+        customer.name = name
+        customer.balance_amount = _offline_decimal(data.get("balance_amount"), "Balance")
+        customer.save()
+        return {"versions": {"customers": {str(customer.pk): customer.updated_at.isoformat()}}}
+
+    if action == "customer.delete":
+        try:
+            customer = Customer.objects.select_for_update().get(pk=int(data["id"]))
+        except (KeyError, TypeError, ValueError, Customer.DoesNotExist) as exc:
+            raise OfflineSyncError("Customer no longer exists.", 409) from exc
+        _offline_version_matches(customer, data.get("expected_updated_at"))
+        if customer.milk_entries.exists() or customer.payments.exists():
+            raise OfflineSyncError(
+                "A customer with milk entries or payments cannot be deleted from offline mode.",
+                status=409,
+            )
+        customer.delete()
+        return {"deleted_id": int(data["id"])}
+
+    if action == "entry.create":
+        customer = customer_for()
+        entry_date = parse_date(str(data.get("date", "")))
+        if not entry_date:
+            raise OfflineSyncError("Entry date is invalid.")
+        quantity_value = str(data.get("quantity_ml", ""))
+        if not quantity_value.isdecimal():
+            raise OfflineSyncError("Milk quantity must be a whole number.")
+        quantity_ml = int(quantity_value)
+        if quantity_ml < 0:
+            raise OfflineSyncError("Milk quantity cannot be negative.")
+        entry = MilkEntry.objects.create(
+            customer=customer, date=entry_date, quantity_ml=quantity_ml
+        )
+        return {
+            "local_id": str(data.get("local_id", "")),
+            "id": entry.pk,
+            "versions": {"entries": {str(entry.pk): entry.updated_at.isoformat()}},
+        }
+
+    if action == "entry.update":
+        try:
+            entry = MilkEntry.objects.select_for_update().get(pk=int(data["id"]))
+        except (KeyError, TypeError, ValueError, MilkEntry.DoesNotExist) as exc:
+            raise OfflineSyncError("Milk entry no longer exists.", 409) from exc
+        _offline_version_matches(entry, data.get("expected_updated_at"))
+        entry_date = parse_date(str(data.get("date", "")))
+        if not entry_date:
+            raise OfflineSyncError("Entry date is invalid.")
+        quantity_value = str(data.get("quantity_ml", ""))
+        if not quantity_value.isdecimal():
+            raise OfflineSyncError("Milk quantity must be a whole number.")
+        quantity_ml = int(quantity_value)
+        if quantity_ml < 0:
+            raise OfflineSyncError("Milk quantity cannot be negative.")
+        entry.date = entry_date
+        entry.quantity_ml = quantity_ml
+        entry.save()
+        return {"versions": {"entries": {str(entry.pk): entry.updated_at.isoformat()}}}
+
+    if action == "entry.delete":
+        try:
+            entry = MilkEntry.objects.select_for_update().get(pk=int(data["id"]))
+        except (KeyError, TypeError, ValueError, MilkEntry.DoesNotExist) as exc:
+            raise OfflineSyncError("Milk entry no longer exists.", 409) from exc
+        _offline_version_matches(entry, data.get("expected_updated_at"))
+        entry.delete()
+        return {"deleted_id": int(data["id"])}
+
+    if action == "payment.create":
+        customer = customer_for()
+        amount = _offline_decimal(data.get("amount"), "Payment amount", positive=True)
+        paid_on = parse_date(str(data.get("paid_on", "")))
+        note = str(data.get("note", "")).strip()
+        if not paid_on:
+            raise OfflineSyncError("Payment date is invalid.")
+        if len(note) > 255:
+            raise OfflineSyncError("Payment note must be 255 characters or fewer.")
+        payment = Payment.objects.create(
+            customer=customer, amount=amount, paid_on=paid_on, note=note
+        )
+        customer.balance_amount -= amount
+        customer.save()
+        return {
+            "local_id": str(data.get("local_id", "")),
+            "id": payment.pk,
+            "versions": {
+                "payments": {str(payment.pk): payment.updated_at.isoformat()},
+                "customers": {str(customer.pk): customer.updated_at.isoformat()},
+            },
+        }
+
+    if action == "payment.update":
+        try:
+            payment = Payment.objects.select_for_update().get(pk=int(data["id"]))
+        except (KeyError, TypeError, ValueError, Payment.DoesNotExist) as exc:
+            raise OfflineSyncError("Payment no longer exists.", 409) from exc
+        _offline_version_matches(payment, data.get("expected_updated_at"))
+        customer = Customer.objects.select_for_update().get(pk=payment.customer_id)
+        amount = _offline_decimal(data.get("amount"), "Payment amount", positive=True)
+        paid_on = parse_date(str(data.get("paid_on", "")))
+        note = str(data.get("note", "")).strip()
+        if not paid_on:
+            raise OfflineSyncError("Payment date is invalid.")
+        if len(note) > 255:
+            raise OfflineSyncError("Payment note must be 255 characters or fewer.")
+        customer.balance_amount += payment.amount - amount
+        customer.save()
+        payment.amount = amount
+        payment.paid_on = paid_on
+        payment.note = note
+        payment.save()
+        return {
+            "versions": {
+                "payments": {str(payment.pk): payment.updated_at.isoformat()},
+                "customers": {str(customer.pk): customer.updated_at.isoformat()},
+            },
+        }
+
+    if action == "payment.delete":
+        try:
+            payment = Payment.objects.select_for_update().get(pk=int(data["id"]))
+        except (KeyError, TypeError, ValueError, Payment.DoesNotExist) as exc:
+            raise OfflineSyncError("Payment no longer exists.", 409) from exc
+        _offline_version_matches(payment, data.get("expected_updated_at"))
+        customer = Customer.objects.select_for_update().get(pk=payment.customer_id)
+        customer.balance_amount += payment.amount
+        customer.save()
+        payment.delete()
+        return {
+            "deleted_id": int(data["id"]),
+            "versions": {"customers": {str(customer.pk): customer.updated_at.isoformat()}},
+        }
+
+    raise OfflineSyncError("Unsupported offline operation.")
+
+
+@login_required(login_url='login')
+@require_http_methods(["POST"])
+def offline_sync(request):
+    try:
+        payload = json.loads(request.body)
+        mutation_id = uuid.UUID(str(payload.get("mutation_id", "")))
+        action = str(payload.get("action", ""))
+        data = payload.get("data")
+    except (json.JSONDecodeError, AttributeError, TypeError, ValueError) as exc:
+        return JsonResponse({"error": "Invalid offline mutation request."}, status=400)
+
+    try:
+        with transaction.atomic():
+            request.user.__class__.objects.select_for_update().get(pk=request.user.pk)
+            existing = OfflineMutation.objects.filter(
+                user=request.user, mutation_id=mutation_id
+            ).first()
+            if existing:
+                result = existing.response
+            else:
+                result = _apply_offline_mutation(action, data)
+                OfflineMutation.objects.create(
+                    user=request.user,
+                    mutation_id=mutation_id,
+                    response=result,
+                )
+    except OfflineSyncError as exc:
+        return JsonResponse({"error": exc.message}, status=exc.status)
+
+    return JsonResponse(result)
+
+
+@login_required(login_url='login')
+def offline_workspace(request):
+    shell_path = settings.BASE_DIR / "static" / "accounts" / "offline.html"
+    return HttpResponse(shell_path.read_text(encoding="utf-8"), content_type="text/html; charset=utf-8")
 
 
 # =========================================================
