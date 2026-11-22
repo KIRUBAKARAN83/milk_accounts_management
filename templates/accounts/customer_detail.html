@@ -328,11 +328,14 @@
       <!-- Secondary -->
       <div class="d-flex flex-wrap gap-2 justify-content-end">
 
-        <a href="https://web.whatsapp.com/"
-           target="_blank"
-           class="btn btn-outline-success btn-sm">
-           💬 WhatsApp
-        </a>
+        <button type="button"
+                class="btn btn-outline-success btn-sm"
+                data-bill-share
+                data-url="{% url 'accounts:bill_pdf' customer.id %}"
+                data-filename="milk-bill-{{ customer.id }}.pdf"
+                data-message="Milk bill for {{ customer.name|escapejs }}">
+           💬 Share bill PDF
+        </button>
 
         <a href="{% url 'accounts:edit_customer' customer.id %}"
            class="btn btn-warning btn-sm">
@@ -387,6 +390,14 @@
                class="btn btn-outline-danger btn-sm">
                📥 Download PDF
             </a>
+            <button type="button"
+                    class="btn btn-outline-success btn-sm"
+                    data-bill-share
+                    data-url="{% url 'accounts:bill_pdf_month' customer.id month.year month.month %}"
+                    data-filename="milk-bill-{{ customer.id }}-{{ month.year }}-{{ month.month }}.pdf"
+                    data-message="Milk bill for {{ customer.name|escapejs }} - {{ month.month_name|escapejs }}">
+               Share PDF
+            </button>
 
           </div>
 
@@ -536,6 +547,7 @@
 <!-- BUG FIX: was in <head> before Chart.js CDN — loadMilkChart uses Chart global
      which didn't exist yet. Now loaded after CDN so Chart is guaranteed available. -->
 <script src="{% static 'accounts/js/chart.js' %}"></script>
+<script src="{% static 'accounts/js/bill-share.js' %}"></script>
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
