@@ -36,6 +36,42 @@ from .pdf_generation import generate_bill_pdf
 logger = logging.getLogger(__name__)
 
 
+def pwa_manifest(request):
+    manifest = {
+        "name": "Milk Accounts Management",
+        "short_name": "Milk Billing",
+        "description": "Manage milk customers, entries, payments, and bills.",
+        "start_url": "/",
+        "scope": "/",
+        "display": "standalone",
+        "background_color": "#f4f6f9",
+        "theme_color": "#1e3c72",
+        "icons": [
+            {
+                "src": "/static/accounts/icons/icon-192.png",
+                "sizes": "192x192",
+                "type": "image/png",
+                "purpose": "any maskable"
+            },
+            {
+                "src": "/static/accounts/icons/icon-512.png",
+                "sizes": "512x512",
+                "type": "image/png",
+                "purpose": "any maskable"
+            }
+        ]
+    }
+    return JsonResponse(manifest, content_type="application/manifest+json")
+
+
+def service_worker(request):
+    worker_path = settings.BASE_DIR / "static" / "accounts" / "js" / "service-worker.js"
+    response = HttpResponse(worker_path.read_text(encoding="utf-8"), content_type="application/javascript")
+    response["Service-Worker-Allowed"] = "/"
+    response["Cache-Control"] = "no-cache"
+    return response
+
+
 # =========================================================
 # DASHBOARD
 # =========================================================
