@@ -7,6 +7,9 @@ urlpatterns = [
 
     # Dashboard
     path('', views.home, name='home'),
+    path('offline/', views.offline_workspace, name='offline_workspace'),
+    path('offline/data/', views.offline_data, name='offline_data'),
+    path('offline/sync/', views.offline_sync, name='offline_sync'),
 
     # Customer Management
     path('customers/', views.customer_list, name='customer_list'),
