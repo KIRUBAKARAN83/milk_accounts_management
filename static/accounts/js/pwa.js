@@ -51,4 +51,3 @@
     if (installButton) installButton.style.display = "none";
   });
 })();
-
