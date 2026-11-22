@@ -2,6 +2,7 @@ from django.db import models # pyright: ignore[reportMissingModuleSource]
 from django.utils import timezone # pyright: ignore[reportMissingModuleSource]
 from django.conf import settings # pyright: ignore[reportMissingModuleSource]
 from decimal import Decimal
+import uuid
 
 PRICE_PER_LITRE = getattr(settings, 'PRICE_PER_LITRE', 50.0)
 
@@ -59,9 +60,25 @@ class Payment(models.Model):
     paid_on     = models.DateField(default=timezone.localdate)
     note        = models.CharField(max_length=255, blank=True)
     created_at  = models.DateTimeField(auto_now_add=True)
+    updated_at  = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ['-paid_on', '-created_at']
 
     def __str__(self):
         return f"{self.customer.name} – ₹{self.amount} on {self.paid_on}"
+
+
+class OfflineMutation(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    mutation_id = models.UUIDField(default=uuid.uuid4)
+    response = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "mutation_id"],
+                name="unique_user_offline_mutation",
+            )
+        ]
