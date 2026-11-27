@@ -5,6 +5,7 @@ import os
 import re
 import io
 import json
+import difflib
 import logging
 import subprocess
 import datetime
@@ -17,7 +18,7 @@ from decimal import Decimal, InvalidOperation
 from datetime import date, timedelta
 
 from django.shortcuts import render, redirect, get_object_or_404
-from django.http import JsonResponse, HttpResponse
+from django.http import JsonResponse, HttpResponse, Http404
 from django.views.decorators.http import require_http_methods
 from django.db.models import Sum
 from django.db import transaction
@@ -25,6 +26,7 @@ from django.utils import timezone
 from django.middleware.csrf import get_token
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.contrib.staticfiles import finders
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.utils.dateparse import parse_date
@@ -36,6 +38,29 @@ from .pdf_generation import generate_bill_pdf
 
 # Module-level logger — replaces flat-file ai_audit_log.txt
 logger = logging.getLogger(__name__)
+
+
+# =========================================================
+# PWA HELPERS
+# =========================================================
+
+def _static_text(rel_path):
+    """
+    Read a text file from the static folders.
+    Uses Django's static finders first (works with STATICFILES_DIRS and app
+    static folders), then falls back to BASE_DIR/static/<rel_path>.
+    Raises Http404 (instead of a 500) when the file is missing.
+    """
+    path = finders.find(rel_path)
+    if not path:
+        fallback = settings.BASE_DIR / "static" / rel_path
+        if fallback.exists():
+            path = str(fallback)
+    if not path:
+        logger.warning("Static file not found: %s", rel_path)
+        raise Http404(rel_path)
+    with open(path, encoding="utf-8") as f:
+        return f.read()
 
 
 def pwa_manifest(request):
@@ -67,8 +92,10 @@ def pwa_manifest(request):
 
 
 def service_worker(request):
-    worker_path = settings.BASE_DIR / "static" / "accounts" / "js" / "service-worker.js"
-    response = HttpResponse(worker_path.read_text(encoding="utf-8"), content_type="application/javascript")
+    response = HttpResponse(
+        _static_text("accounts/js/service-worker.js"),
+        content_type="application/javascript",
+    )
     response["Service-Worker-Allowed"] = "/"
     response["Cache-Control"] = "no-cache"
     return response
@@ -342,8 +369,10 @@ def offline_sync(request):
 
 @login_required(login_url='login')
 def offline_workspace(request):
-    shell_path = settings.BASE_DIR / "static" / "accounts" / "offline.html"
-    return HttpResponse(shell_path.read_text(encoding="utf-8"), content_type="text/html; charset=utf-8")
+    return HttpResponse(
+        _static_text("accounts/offline.html"),
+        content_type="text/html; charset=utf-8",
+    )
 
 
 # =========================================================
@@ -1085,7 +1114,13 @@ def _extract_from_pdf(file_path):
     """
     Two-stage PDF extraction:
       Stage 1 — pdfplumber (fast, lossless for digital PDFs)
-      Stage 2 — OCR.Space per page (fallback for scanned/image PDFs)
+      Stage 2 — OCR.Space per page (fallback for scanned/image PDFs),
+                pages rendered with pypdfium2 (pure pip, no poppler needed)
+
+    FIX: previously the *longer* of layout-text / word-text was kept, and
+    layout-text (layout=True) is always longer because it pads every line
+    with spaces to the page width. That sent ~90,000 characters of mostly
+    blank padding to the AI. Now the compact word-based text is preferred.
     """
     try:
         import pdfplumber
@@ -1114,11 +1149,10 @@ def _extract_from_pdf(file_path):
     pages_text = []
     with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
         for page in pdf.pages:
-            text       = page.extract_text(layout=True) or ""
-            words_text = _reconstruct_lines_from_words(page)
-            best       = words_text if len(words_text) >= len(text) else text
+            # Compact text first; plain extract_text() (no layout padding) as backup
+            best = _reconstruct_lines_from_words(page) or (page.extract_text() or "")
             pages_text.append(best)
-            print(f"[PDF] Page extracted ({len(best)} chars):\n{best[:300]}")
+            print(f"[PDF] Page extracted ({len(best)} chars): {best[:120]!r}")
 
     text = "\n".join(pages_text).strip()
     if text:
@@ -1126,21 +1160,21 @@ def _extract_from_pdf(file_path):
 
     print("[PDF] No selectable text — falling back to OCR.Space per page")
     try:
-        from pdf2image import convert_from_bytes
+        import pypdfium2 as pdfium
     except ImportError:
         raise Exception(
-            "pdf2image is required for scanned PDF OCR. "
-            "Run: pip install pdf2image  (server also needs: apt install poppler-utils)"
+            "pypdfium2 is required for scanned PDF OCR. Run: pip install pypdfium2"
         )
 
-    images        = convert_from_bytes(pdf_bytes, dpi=200)
+    pdf_doc        = pdfium.PdfDocument(pdf_bytes)
     all_text_parts = []
 
-    for page_num, pil_img in enumerate(images, start=1):
+    for page_num, pdf_page in enumerate(pdf_doc, start=1):
+        pil_img = pdf_page.render(scale=200 / 72).to_pil().convert("RGB")
         buf = io.BytesIO()
-        pil_img.save(buf, format="PNG")
+        pil_img.save(buf, format="JPEG", quality=85)   # JPEG keeps size under OCR.Space limit
         img_bytes     = buf.getvalue()
-        page_filename = f"page_{page_num}.png"
+        page_filename = f"page_{page_num}.jpg"
 
         text_eng = _call_ocrspace_api(img_bytes, page_filename, language="eng")
         try:
@@ -1312,6 +1346,70 @@ def _extract_json_array(text):
 
 
 # =========================================================
+# DETERMINISTIC REGISTER PARSER (runs BEFORE the AI)
+# =========================================================
+# Handles the usual register layout:
+#
+#     01-november-2026
+#                Ml
+#     sutha        1200
+#     Infa school  2000
+#
+# A date line applies to all rows below it (even across PDF page breaks).
+# Misspelled months ("nevember") are matched fuzzily. Fast, free and 100%
+# repeatable — the AI is only used when this finds nothing.
+
+_MONTHS = [
+    "january", "february", "march", "april", "may", "june",
+    "july", "august", "september", "october", "november", "december",
+]
+_DATE_RE = re.compile(r'^\s*(\d{1,2})[-/. ]([A-Za-z]+)[-/. ](\d{2,4})\s*$')
+_ROW_RE  = re.compile(r'^\s*(.+?)\s+(\d+(?:\.\d+)?)\s*(ml|l|ltr|litres?)?\s*$', re.I)
+
+
+def _month_number(word):
+    w = word.lower()
+    for i, m in enumerate(_MONTHS, 1):
+        if len(w) >= 3 and m.startswith(w[:3]):
+            return i
+    close = difflib.get_close_matches(w, _MONTHS, n=1, cutoff=0.6)
+    return _MONTHS.index(close[0]) + 1 if close else None
+
+
+def _parse_register_text(text):
+    rows, current = [], None
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.lower() in ("ml", "l"):
+            continue
+
+        m = _DATE_RE.match(line)
+        if m:
+            month = _month_number(m.group(2))
+            year  = int(m.group(3))
+            if year < 100:
+                year += 2000
+            try:
+                current = date(year, month, int(m.group(1))) if month else None
+            except ValueError:
+                current = None
+            continue
+
+        m = _ROW_RE.match(line)
+        if m and current:
+            qty  = float(m.group(2))
+            unit = (m.group(3) or "").lower()
+            if unit.startswith("l") and unit != "ml":   # litres -> ml
+                qty *= 1000
+            rows.append({
+                "customer":    re.sub(r"\s+", " ", m.group(1)).strip(),
+                "date":        current.isoformat(),
+                "quantity_ml": int(qty),
+            })
+    return rows
+
+
+# =========================================================
 # MAIN AI PROCESSING FUNCTION
 # =========================================================
 
@@ -1336,6 +1434,21 @@ def process_file_with_ai(file_path):
     if not text_content.strip():
         raise Exception("Could not extract readable text from the document.")
 
+    # ── Step 1: deterministic parser (no AI needed for a clean register) ──
+    parsed_rows = _parse_register_text(text_content)
+    print(f"[PARSER] rows={len(parsed_rows)} days={len({r['date'] for r in parsed_rows})}")
+    if parsed_rows:
+        preview = []
+        for r in parsed_rows:
+            ok = 0 <= r["quantity_ml"] <= 50000
+            preview.append({
+                **r,
+                "confidence": 0.95 if ok else 0.2,
+                "valid":      ok,
+            })
+        return preview
+
+    # ── Step 2: AI fallback for messy / unstructured documents ────────────
     groq_client = Groq(api_key=settings.GROQ_API_KEY)
 
     prompt = f"""
@@ -1391,7 +1504,7 @@ Text:
         temperature=0,
     )
 
-    raw_output   = response.choices[0].message.content.strip()
+    raw_output   = (response.choices[0].message.content or "").strip()
     print("[AI RAW OUTPUT]", raw_output[:500])
 
     clean_output = re.sub(r"```(?:json)?\s*", "", raw_output).strip()
@@ -1411,6 +1524,12 @@ Text:
         raise Exception(
             f"AI did not return valid JSON. "
             f"Raw response (first 300 chars): {raw_output[:300]!r}"
+        )
+
+    if parsed == []:
+        raise Exception(
+            "No entries were found in this file. Check that each day has a date "
+            "line (e.g. 01-november-2026) followed by 'name  quantity' rows."
         )
 
     preview_list = []
